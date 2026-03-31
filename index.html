@@ -928,62 +928,83 @@ function renderSettings(){
 // ── Sincronizar DESDE Sheets ──────────────────────────────────────
 function sincronizarDesdeSheets(){
   if(!sheetsUrl){ showToast('Guard\u00e1 la URL primero'); return; }
-  var btn = document.getElementById('sync-pull-btn');
+  var btn      = document.getElementById('sync-pull-btn');
   var statusEl = document.getElementById('sync-pull-status');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>Cargando...';
-  statusEl.style.display = 'block';
-  statusEl.style.color = 'var(--muted)';
-  statusEl.textContent = 'Conectando con Sheets...';
+  statusEl.style.display  = 'block';
+  statusEl.style.color    = 'var(--muted)';
+  statusEl.textContent    = 'Conectando con Sheets...';
 
-  // Apps Script requiere seguir redirecciones para GET
-  var url = sheetsUrl + (sheetsUrl.indexOf('?')>=0 ? '&' : '?') + 'action=pull&token=mp2026';
+  // Usamos JSONP — único método que funciona con Apps Script en móviles sin CORS
+  var callbackName = 'mpCallback_' + Date.now();
+  var script = document.createElement('script');
+  var timeout = setTimeout(function(){
+    limpiarJsonp(script, callbackName);
+    btn.disabled = false;
+    btn.innerHTML = '&#8681; Cargar datos desde Sheets';
+    statusEl.textContent = '\u274C Tiempo de espera agotado. Verific\u00e1 la URL y que el acceso sea "Cualquier persona".';
+    statusEl.style.color = 'var(--red)';
+  }, 15000);
 
-  fetch(url, { method:'GET', redirect:'follow' })
-    .then(function(r){
-      if(!r.ok) throw new Error('HTTP ' + r.status);
-      return r.text();
-    })
-    .then(function(text){
-      // Apps Script a veces devuelve el JSON envuelto, lo limpiamos
-      var clean = text.trim();
-      if(clean.indexOf('(') === 0) clean = clean.slice(1, -1); // quitar jsonp wrapper si existe
-      var data = JSON.parse(clean);
-      if(!data.ok) throw new Error(data.error || 'Sin datos');
+  window[callbackName] = function(data){
+    clearTimeout(timeout);
+    limpiarJsonp(script, callbackName);
+    btn.disabled = false;
+    btn.innerHTML = '&#8681; Cargar datos desde Sheets';
 
-      var cambios = [];
-
-      if(data.state && data.state.isSetup){
-        state = data.state;
-        save();
-        cambios.push('presupuesto y gastos');
-      }
-      if(data.historial && data.historial.length){
-        historial = data.historial;
-        saveHist();
-        cambios.push('historial ('+data.historial.length+' mes/es)');
-      }
-
-      btn.disabled = false;
-      btn.innerHTML = '&#8681; Cargar datos desde Sheets';
-
-      if(cambios.length){
-        statusEl.textContent = '\u2705 Sincronizado: ' + cambios.join(', ');
-        statusEl.style.color = 'var(--green)';
-        showToast('\u2705 Datos actualizados correctamente');
-        // Si está en dashboard, refrescar
-        renderSettings();
-      } else {
-        statusEl.textContent = '\u2139 No hab\u00eda datos nuevos en Sheets';
-        statusEl.style.color = 'var(--muted)';
-      }
-    })
-    .catch(function(err){
-      btn.disabled = false;
-      btn.innerHTML = '&#8681; Cargar datos desde Sheets';
-      statusEl.textContent = '\u274C No se pudo conectar. Verific\u00e1 la URL y que el Web App tenga acceso p\u00fablico.';
+    if(!data || !data.ok){
+      statusEl.textContent = '\u274C ' + (data ? data.error : 'Sin respuesta');
       statusEl.style.color = 'var(--red)';
-    });
+      return;
+    }
+
+    var cambios = [];
+    var sheetState    = data.state;
+    var sheetHistorial= data.historial || [];
+
+    if(sheetState && sheetState.isSetup){
+      // Comparar si hay diferencias antes de reemplazar
+      var localCats  = JSON.stringify(state.categories.map(function(c){ return { name:c.name, budget:c.budget, spent:c.spent }; }));
+      var sheetCats  = JSON.stringify(sheetState.categories.map(function(c){ return { name:c.name, budget:c.budget, spent:c.spent }; }));
+      var localExp   = JSON.stringify(state.expenses);
+      var sheetExp   = JSON.stringify(sheetState.expenses);
+
+      if(localCats !== sheetCats || localExp !== sheetExp){
+        state = sheetState;
+        save();
+        cambios.push('presupuesto y gastos actualizados');
+      }
+    }
+
+    if(sheetHistorial.length && JSON.stringify(historial) !== JSON.stringify(sheetHistorial)){
+      historial = sheetHistorial;
+      saveHist();
+      cambios.push('historial ('+sheetHistorial.length+' mes/es)');
+    }
+
+    if(cambios.length){
+      statusEl.textContent = '\u2705 ' + cambios.join(', ');
+      statusEl.style.color = 'var(--green)';
+      showToast('\u2705 Datos actualizados desde Sheets');
+      renderSettings();
+    } else {
+      statusEl.textContent = '\u2139 Los datos ya estaban al d\u00eda';
+      statusEl.style.color = 'var(--muted)';
+      showToast('Ya ten\u00edas los datos al d\u00eda');
+    }
+  };
+
+  var url = sheetsUrl
+    + (sheetsUrl.indexOf('?') >= 0 ? '&' : '?')
+    + 'action=pull&token=mp2026&callback=' + callbackName;
+  script.src = url;
+  document.head.appendChild(script);
+}
+
+function limpiarJsonp(script, callbackName){
+  try { document.head.removeChild(script); } catch(e){}
+  try { delete window[callbackName]; } catch(e){}
 }
 function showToast(msg){
   var t=document.getElementById('toast');
