@@ -344,6 +344,10 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
         <div class="num-btn zero" onclick="numPress('0')">0</div>
         <div class="num-btn del" onclick="numDel()">&#9003;</div>
       </div>
+      <div style="margin-top:14px">
+        <span class="field-label">Nota (opcional)</span>
+        <input type="text" id="expense-nota" placeholder="ej: almuerzo con Lucas, nafta, Netflix..." autocomplete="off" style="width:100%;background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px;font-size:14px;font-weight:500;color:var(--text);font-family:'Syne',sans-serif;outline:none;transition:border-color 0.15s" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'">
+      </div>
       <br>
       <button class="btn-primary" id="confirm-btn" onclick="confirmExpense()">&#10003; &nbsp;Guardar gasto</button>
       <br><br>
@@ -694,6 +698,7 @@ function getAmountValue(){
 // ── Agregar gasto ─────────────────────────────────────────────────
 function initAddExpense(){
   amountStr=''; selectedCatId=null; updateAmountDisplay();
+  document.getElementById('expense-nota').value='';
   var now=new Date();
   document.getElementById('expense-date').textContent=DIAS[now.getDay()]+' '+now.getDate()+' de '+MESES_C[now.getMonth()];
   var html='';
@@ -720,7 +725,8 @@ function confirmExpense(){
   if(!cat) return;
   cat.spent+=amount;
   var now=new Date();
-  var expense={ id:now.getTime().toString(), categoryId:selectedCatId, categoryName:cat.name, amount:amount, user:currentUser, date:now.toISOString() };
+  var nota=document.getElementById('expense-nota').value.trim();
+  var expense={ id:now.getTime().toString(), categoryId:selectedCatId, categoryName:cat.name, amount:amount, nota:nota, user:currentUser, date:now.toISOString() };
   state.expenses.push(expense); save();
   setConfirmBtn(true);
   sendToSheets({ type:'gasto', expense:expense }, function(ok){
